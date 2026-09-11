@@ -11,8 +11,8 @@ mod store;
 use audio::AudioPlayer;
 use eframe::egui;
 use egui::{
-    Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, RichText, Sense,
-    Stroke, Ui, Vec2,
+    Align2, Color32, Context, CornerRadius, CursorIcon, FontId, Frame, LayerId, Layout, Margin,
+    Order, RichText, Sense, Shadow, Stroke, StrokeKind, Ui, Vec2, pos2,
 };
 use hotkeys::HotkeyManager;
 use models::{SoundCategory, SoundFile};
@@ -62,6 +62,38 @@ fn apply_visuals(ctx: &Context, dark: bool) {
     vis.window_fill = if dark { DARK.surface } else { LIGHT.surface };
     vis.extreme_bg_color = if dark { DARK.card } else { LIGHT.card };
     vis.selection.stroke = Stroke::new(1.5, ACCENT);
+    vis.selection.bg_fill = ACCENT.gamma_multiply(0.25);
+    // Hand cursor over anything interactive.
+    vis.interact_cursor = Some(CursorIcon::PointingHand);
+    // Softer, rounder windows & popups.
+    vis.window_corner_radius = CornerRadius::same(16);
+    vis.menu_corner_radius = CornerRadius::same(12);
+    vis.window_shadow = Shadow {
+        offset: [0, 10],
+        blur: 30,
+        spread: 2,
+        color: Color32::from_black_alpha(110),
+    };
+    vis.popup_shadow = Shadow {
+        offset: [0, 4],
+        blur: 14,
+        spread: 0,
+        color: Color32::from_black_alpha(80),
+    };
+    // Rounder widgets with accent hover strokes and pressed feedback.
+    for w in [
+        &mut vis.widgets.noninteractive,
+        &mut vis.widgets.inactive,
+        &mut vis.widgets.hovered,
+        &mut vis.widgets.active,
+        &mut vis.widgets.open,
+    ] {
+        w.corner_radius = CornerRadius::same(8);
+    }
+    vis.widgets.hovered.bg_stroke = Stroke::new(1.0, ACCENT.gamma_multiply(0.55));
+    vis.widgets.active.bg_fill = ACCENT.gamma_multiply(0.30);
+    vis.widgets.active.bg_stroke = Stroke::new(1.0, ACCENT);
+    vis.slider_trailing_fill = true;
     ctx.set_visuals(vis);
 }
 
@@ -254,8 +286,10 @@ impl eframe::App for SoundpadApp {
         self.draw_status_bar(ui, &th);
         self.draw_grid(ui, &th);
         self.draw_dialogs(&ctx, &th);
+        draw_drop_overlay(&ctx);
 
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        // ~60 fps so hover/press/equalizer animations stay fluid.
+        ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -284,7 +318,11 @@ impl SoundpadApp {
                     ui.add_space(12.0);
 
                     if ui
-                        .button(RichText::new("＋ Add").size(14.0))
+                        .add(
+                            egui::Button::new(RichText::new("＋ Add").size(14.0))
+                                .fill(ACCENT.gamma_multiply(0.18))
+                                .stroke(Stroke::new(1.0, ACCENT)),
+                        )
                         .clicked()
                     {
                         let paths = rfd::FileDialog::new()
@@ -340,7 +378,20 @@ impl SoundpadApp {
                 let total = self.store.sounds.len();
                 let (rect, resp) =
                     ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
-                paint_category_row(ui, th, rect, "All Sounds", "📁", total, self.selected_category.is_none(), false);
+                let hover_t = ui
+                    .ctx()
+                    .animate_bool_with_time(ui.id().with("cat_row_all"), resp.hovered(), 0.10);
+                paint_category_row(
+                    ui,
+                    th,
+                    rect,
+                    "All Sounds",
+                    "📁",
+                    total,
+                    self.selected_category.is_none(),
+                    false,
+                    hover_t,
+                );
                 if resp.clicked() {
                     self.selected_category = None;
                 }
@@ -358,7 +409,22 @@ impl SoundpadApp {
                     let selected = self.selected_category.as_deref() == Some(cat.id.as_str());
                     let (rect, resp) =
                         ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
-                    paint_category_row(ui, th, rect, &cat.name, builtin_icon(&cat.icon), count, selected, true);
+                    let hover_t = ui.ctx().animate_bool_with_time(
+                        ui.id().with("cat_row").with(cat.id.as_str()),
+                        resp.hovered(),
+                        0.10,
+                    );
+                    paint_category_row(
+                        ui,
+                        th,
+                        rect,
+                        &cat.name,
+                        builtin_icon(&cat.icon),
+                        count,
+                        selected,
+                        true,
+                        hover_t,
+                    );
                     if resp.clicked() {
                         self.selected_category = Some(cat.id.clone());
                     }
@@ -371,7 +437,9 @@ impl SoundpadApp {
                 if ui
                     .add(
                         egui::Button::new(RichText::new("＋ Add Category").size(13.0))
-                            .min_size(Vec2::new(ui.available_width(), 30.0)),
+                            .min_size(Vec2::new(ui.available_width(), 30.0))
+                            .fill(ACCENT.gamma_multiply(0.15))
+                            .stroke(Stroke::new(1.0, ACCENT.gamma_multiply(0.4))),
                     )
                     .clicked()
                 {
@@ -403,7 +471,18 @@ impl SoundpadApp {
                 if sounds.is_empty() {
                     ui.vertical_centered(|ui| {
                         ui.add_space(ui.available_height() / 3.0);
-                        ui.label(RichText::new("♪").size(48.0).color(ACCENT.gamma_multiply(0.5)));
+                        // Gently floating note.
+                        let t = ui.input(|i| i.time) as f32;
+                        let (r, _) = ui.allocate_exact_size(Vec2::new(80.0, 64.0), Sense::hover());
+                        let y = (t * 1.4).sin() * 6.0;
+                        let alpha = 0.45 + 0.20 * (t * 1.9).sin();
+                        ui.painter().text(
+                            r.center() + Vec2::new(0.0, y - 6.0),
+                            Align2::CENTER_CENTER,
+                            "♪",
+                            FontId::proportional(48.0),
+                            ACCENT.gamma_multiply(alpha),
+                        );
                         ui.label(RichText::new("No sounds yet").size(20.0).color(th.text_dim));
                         ui.label(
                             RichText::new("Drop audio files onto the window\nor use the ＋ Add button")
@@ -441,15 +520,87 @@ impl SoundpadApp {
     fn sound_card(&mut self, ui: &mut Ui, th: &Theme, sound: &SoundFile) {
         let playing = self.player.is_playing(&sound.id);
 
-        let card_bg = if playing { ACCENT.gamma_multiply(0.15) } else { th.card };
-        let frame = Frame::new()
-            .fill(card_bg)
-            .corner_radius(CornerRadius::same(14))
-            .stroke(Stroke::new(1.0, if playing { ACCENT } else { th.border }))
-            .inner_margin(Margin::same(10));
+        // Reserve next-frame space so the hover lift doesn't reflow the grid.
+        // The card rect is persisted in egui memory for a stable measurement.
+        let pad = 14.0;
+        let card_id = ui.id().with("card_rect").with(sound.id.as_str());
+        let (space, resp) =
+            ui.allocate_exact_size(Vec2::new(140.0 + 2.0 * pad, 148.0 + 2.0 * pad), Sense::hover());
+        let base_rect: egui::Rect = ui
+            .ctx()
+            .memory(|m| m.data.get_temp(card_id))
+            .filter(|r: &egui::Rect| r.is_positive() && r.width() >= 100.0)
+            .unwrap_or_else(|| space.shrink2(Vec2::splat(pad)));
 
-        frame.show(ui, |ui| {
-            ui.set_min_size(Vec2::new(140.0, 148.0));
+        // Animated states.
+        let hover_t = ui
+            .ctx()
+            .animate_bool_with_time(
+                ui.id().with("card_hover").with(sound.id.as_str()),
+                resp.hovered(),
+                0.12,
+            )
+            .clamp(0.0, 1.0);
+        let press_t = ui
+            .ctx()
+            .animate_bool_with_time(
+                ui.id().with("card_press").with(sound.id.as_str()),
+                resp.is_pointer_button_down_on(),
+                0.08,
+            )
+            .clamp(0.0, 1.0);
+        let play_t = ui
+            .ctx()
+            .animate_bool_with_time(
+                ui.id().with("card_play").with(sound.id.as_str()),
+                playing,
+                0.25,
+            )
+            .clamp(0.0, 1.0);
+
+        // Hover lift + press dip.
+        let lift = 6.0 * hover_t - 3.0 * press_t;
+        let card_rect = base_rect.translate(Vec2::new(0.0, -lift));
+
+        let painter = ui.painter_at(card_rect.expand(pad + 20.0));
+
+        // Drop shadow grows with hover.
+        if hover_t > 0.01 || play_t > 0.01 {
+            let glow = ACCENT.gamma_multiply(0.35 * hover_t + 0.25 * play_t);
+            painter.rect_filled(
+                card_rect.expand(6.0 + 8.0 * hover_t),
+                CornerRadius::same(18),
+                glow,
+            );
+        }
+
+        // Card body.
+        let card_bg = th
+            .card
+            .lerp_to_gamma(ACCENT.gamma_multiply(0.18), 0.8 * play_t);
+        painter.rect_filled(
+            card_rect,
+            CornerRadius::same(14),
+            card_bg,
+        );
+        let border = th
+            .border
+            .lerp_to_gamma(ACCENT, (hover_t * 0.8 + play_t).clamp(0.0, 1.0));
+        painter.rect_stroke(
+            card_rect,
+            CornerRadius::same(14),
+            Stroke::new(1.0 + 1.0 * hover_t, border),
+            StrokeKind::Inside,
+        );
+
+        // Contents live in a child UI clipped to the card.
+        let mut card_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt(ui.id().with("card").with(sound.id.as_str()))
+                .max_rect(card_rect.shrink(10.0))
+                .sense(Sense::hover()),
+        );
+        let ui = &mut card_ui;
             ui.vertical(|ui| {
                 // Top row: delete / loop badge / edit.
                 ui.horizontal(|ui| {
@@ -477,64 +628,129 @@ impl SoundpadApp {
                     });
                 });
 
-                ui.vertical_centered(|ui| {
-                    let play_label = if playing { "⏸" } else { "▶" };
-                    let play_btn = egui::Button::new(
-                        RichText::new(play_label)
-                            .size(18.0)
-                            .color(if playing { ACCENT } else { th.text }),
-                    )
-                    .min_size(Vec2::new(40.0, 40.0))
-                    .corner_radius(CornerRadius::same(20))
-                    .fill(if playing { ACCENT.gamma_multiply(0.15) } else { th.bg });
-                    if ui.add(play_btn).clicked() {
-                        if playing {
-                            self.player.stop(&sound.id);
-                        } else {
-                            self.player.play(sound, sound.volume);
-                        }
+            ui.vertical_centered(|ui| {
+                // Play button: allocate at fixed size, then paint with
+                // hover-grow / press-shrink and a pulsing halo while playing.
+                let (rect, pb) = ui.allocate_exact_size(Vec2::new(40.0, 40.0), Sense::click());
+                if pb.clicked() {
+                    if playing {
+                        self.player.stop(&sound.id);
+                    } else {
+                        self.player.play(sound, sound.volume);
                     }
+                }
+                let btn_hover = ui
+                    .ctx()
+                    .animate_bool_with_time(
+                        ui.id().with("play_hover").with(sound.id.as_str()),
+                        pb.hovered(),
+                        0.10,
+                    )
+                    .clamp(0.0, 1.0);
+                let btn_press = ui
+                    .ctx()
+                    .animate_bool_with_time(
+                        ui.id().with("play_press").with(sound.id.as_str()),
+                        pb.is_pointer_button_down_on(),
+                        0.08,
+                    )
+                    .clamp(0.0, 1.0);
+                let s = 1.0 + 0.08 * btn_hover - 0.10 * btn_press;
+                let center = rect.center();
+                let radius = 20.0 * s;
+                let t = ui.input(|i| i.time) as f32;
+                if playing {
+                    let pulse = 0.5 + 0.5 * (t * 2.2).sin();
+                    ui.painter().circle_filled(
+                        center,
+                        radius + 5.0 + 3.0 * pulse,
+                        ACCENT.gamma_multiply(0.10 + 0.08 * pulse),
+                    );
+                }
+                if btn_hover > 0.01 {
+                    ui.painter().circle_filled(
+                        center,
+                        radius + 3.0,
+                        ACCENT.gamma_multiply(0.25 * btn_hover),
+                    );
+                }
+                ui.painter()
+                    .circle_filled(center, radius, th.bg);
+                ui.painter().text(
+                    center + Vec2::new(1.0, 0.0),
+                    Align2::CENTER_CENTER,
+                    if playing { "⏸" } else { "▶" },
+                    FontId::proportional(18.0),
+                    if playing { ACCENT } else { th.text },
+                );
 
-                    ui.add_space(2.0);
-                    ui.label(RichText::new(&sound.name).size(12.0).color(th.text).strong());
+                ui.add_space(2.0);
+                ui.label(RichText::new(&sound.name).size(12.0).color(th.text).strong());
 
-                    let total = {
-                        let d = self.player.duration_secs(&sound.id);
-                        if d > 0.0 { d } else { sound.duration }
-                    };
-                    if playing && total > 0.0 {
-                        let elapsed = self.player.elapsed_secs(&sound.id);
+                let total = {
+                    let d = self.player.duration_secs(&sound.id);
+                    if d > 0.0 { d } else { sound.duration }
+                };
+                if playing && total > 0.0 {
+                    // Time + animated equalizer bars.
+                    let elapsed = self.player.elapsed_secs(&sound.id);
+                    ui.horizontal(|ui| {
                         ui.label(
                             RichText::new(format!("{} / {}", fmt_time(elapsed), fmt_time(total)))
                                 .size(10.0)
                                 .color(ACCENT),
                         );
-                    } else if total > 0.0 {
-                        ui.label(RichText::new(fmt_time(total)).size(10.0).color(th.text_dim));
-                    }
-
-                    // Badges.
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(sound.extension()).size(9.0).color(th.text_dim));
-                        if let Some(hk) = &sound.hotkey {
-                            ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
-                                ui.label(RichText::new(hk).size(9.0).color(ACCENT));
-                            });
-                        }
                     });
-                });
-
-                // Progress bar.
-                if playing {
-                    let p = self.player.progress(&sound.id);
-                    ui.add(
-                        egui::ProgressBar::new(p)
-                            .desired_height(3.0)
-                            .fill(ACCENT),
-                    );
+                    draw_equalizer(ui, ACCENT, 0.9);
+                } else if total > 0.0 {
+                    ui.label(RichText::new(fmt_time(total)).size(10.0).color(th.text_dim));
                 }
+
+                // Badges.
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(sound.extension()).size(9.0).color(th.text_dim));
+                    if let Some(hk) = &sound.hotkey {
+                        ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
+                            ui.label(RichText::new(hk).size(9.0).color(ACCENT));
+                        });
+                    }
+                });
             });
+
+            // Progress bar (animated fill, taller while hovered).
+            let bar_h = 3.0 + 2.0 * hover_t;
+            let (bar_rect, _) =
+                ui.allocate_exact_size(Vec2::new(card_rect.width() - 20.0, bar_h), Sense::hover());
+            let p = if playing {
+                self.player.progress(&sound.id)
+            } else {
+                0.0
+            };
+            // Smooth the value so seeking doesn't jump.
+            let p_smooth = ui
+                .ctx()
+                .animate_value_with_time(
+                    ui.id().with("progress").with(sound.id.as_str()),
+                    p.clamp(0.0, 1.0),
+                    0.15,
+                )
+                .clamp(0.0, 1.0);
+            if p_smooth > 0.001 {
+                ui.painter().rect_filled(
+                    egui::Rect::from_min_size(bar_rect.left_top(), Vec2::new(bar_rect.width() * p_smooth, bar_h)),
+                    CornerRadius::same(2),
+                    ACCENT,
+                );
+            }
+            ui.painter().rect_filled(
+                bar_rect,
+                CornerRadius::same(2),
+                th.border.gamma_multiply(0.6),
+            );
         });
+
+        // Keep the stable rect for next frame.
+        ui.ctx().memory_mut(|m| m.data.insert_temp(card_id, base_rect));
     }
 
     // ── Status bar ──────────────────────────────────────────────────────────
@@ -564,16 +780,18 @@ impl SoundpadApp {
                     }
 
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(RichText::new("⏹ Stop All").size(12.0).color(Color32::WHITE))
-                                    .fill(ERROR_RED)
-                                    .min_size(Vec2::new(84.0, 26.0)),
-                            )
-                            .clicked()
-                        {
-                            self.player.stop_all();
-                        }
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new("⏹ Stop All").size(12.0).color(Color32::WHITE))
+                                .fill(ERROR_RED)
+                                .stroke(Stroke::NONE)
+                                .min_size(Vec2::new(84.0, 26.0)),
+                        )
+                        .on_hover_cursor(CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        self.player.stop_all();
+                    }
 
                         ui.label(
                             RichText::new(format!("🔊 {}", self.store.settings.output_device))
@@ -1175,10 +1393,26 @@ fn paint_category_row(
     count: usize,
     selected: bool,
     deletable: bool,
+    hover_t: f32,
 ) {
     let painter = ui.painter();
-    let bg = if selected { ACCENT.gamma_multiply(0.12) } else { Color32::TRANSPARENT };
-    painter.rect_filled(rect, CornerRadius::same(10), bg);
+    // Slide the row slightly right and tint the background while hovered.
+    let rect = rect.translate(Vec2::new(6.0 * hover_t, 0.0));
+    let bg = if selected {
+        ACCENT.gamma_multiply(0.12)
+    } else {
+        Color32::TRANSPARENT
+    };
+    let hover_bg = ACCENT.gamma_multiply(0.07);
+    painter.rect_filled(rect, CornerRadius::same(10), bg.lerp_to_gamma(hover_bg, hover_t));
+    if hover_t > 0.01 || selected {
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(10),
+            Stroke::new(1.0, ACCENT.gamma_multiply(0.35 * hover_t.max(if selected { 0.6 } else { 0.0 }))),
+            StrokeKind::Inside,
+        );
+    }
 
     // Icon box.
     let icon_rect = egui::Rect::from_min_size(rect.left_top() + Vec2::new(6.0, 4.0), Vec2::new(26.0, 26.0));
@@ -1216,12 +1450,70 @@ fn paint_category_row(
         );
     }
     if deletable {
+        // ✕ brightens on hover so it invites the click.
         painter.text(
             egui::pos2(rect.right() - 8.0, rect.center().y),
             Align2::RIGHT_CENTER,
             "✕",
             FontId::proportional(10.0),
-            th.text_dim.gamma_multiply(0.6),
+            ERROR_RED
+                .lerp_to_gamma(th.text_dim.gamma_multiply(0.6), 1.0 - hover_t)
+                .gamma_multiply(0.5 + 0.5 * hover_t),
+        );
+    }
+}
+
+/// Animated 4-bar equalizer (used on playing cards).
+fn draw_equalizer(ui: &mut Ui, color: Color32, height: f32) {
+    let t = ui.input(|i| i.time) as f32;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(34.0, height), Sense::hover());
+    let painter = ui.painter_at(rect);
+    let n = 4;
+    let bw = rect.width() / (2.0 * n as f32);
+    for i in 0..n {
+        let phase = t * (4.0 + 1.3 * i as f32) + i as f32 * 1.7;
+        let h = height * (0.35 + 0.65 * (0.5 + 0.5 * phase.sin()));
+        let x = rect.left() + (2.0 * i as f32 + 0.5) * bw;
+        painter.rect_filled(
+            egui::Rect::from_min_size(
+                pos2(x, rect.bottom() - h),
+                Vec2::new(bw, h),
+            ),
+            CornerRadius::same(1),
+            color,
+        );
+    }
+}
+
+/// Full-window "drop files here" overlay while dragging files over the app.
+fn draw_drop_overlay(ctx: &Context) {
+    let dragging = ctx.input(|i| !i.raw.hovered_files.is_empty());
+    if !dragging {
+        return;
+    }
+    let screen: egui::Rect = ctx.input(|i| i.viewport_rect());
+    {
+        let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, "drop_overlay".into()));
+        let t = ctx.input(|i| i.time) as f32;
+        let pulse = 0.5 + 0.5 * (t * 3.0).sin();
+        painter.rect_filled(
+            screen,
+            CornerRadius::same(0),
+            ACCENT.gamma_multiply(0.08 + 0.04 * pulse),
+        );
+        let inner = screen.shrink(24.0);
+        painter.rect_stroke(
+            inner,
+            CornerRadius::same(18),
+            Stroke::new(2.5, ACCENT.gamma_multiply(0.6 + 0.3 * pulse)),
+            StrokeKind::Outside,
+        );
+        painter.text(
+            screen.center(),
+            Align2::CENTER_CENTER,
+            "⬇ Drop to add sounds",
+            FontId::proportional(26.0),
+            Color32::WHITE,
         );
     }
 }
