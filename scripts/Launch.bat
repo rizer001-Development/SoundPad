@@ -1,18 +1,17 @@
 @echo off
 title Soundpad
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
-:: Use bundled JRE if present, otherwise system Java
-if exist "runtime\bin\java.exe" (
-    set JAVA=runtime\bin\java.exe
+if exist "target\release\soundpad.exe" (
+    start "" "target\release\soundpad.exe"
 ) else (
-    set JAVA=java
-)
-
-echo Starting Soundpad...
-"%JAVA%" -Dfile.encoding=UTF-8 -jar Soundpad.jar
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Soundpad exited with an error.
-    pause
+    echo Release binary not found. Building...
+    cargo build --release
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] Build failed.
+        pause
+        exit /b 1
+    )
+    start "" "target\release\soundpad.exe"
 )

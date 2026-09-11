@@ -1,0 +1,47 @@
+[package]
+name = "soundpad"
+version = "1.0.0"
+edition = "2021"
+description = "Free, open-source soundpad for gamers and streamers"
+license = "AGPL-3.0"
+authors = ["rizer01"]
+
+[dependencies]
+# GUI
+eframe = { version = "0.36", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+
+# Audio playback (cpal backend + symphonia decoders: mp3/wav/ogg/flac/aac)
+rodio = { version = "0.22", default-features = false, features = [
+    "playback",
+    "symphonia-all",
+] }
+cpal = "0.17"
+
+# Global hotkeys (OS-level, work when window is unfocused)
+global-hotkey = "0.8"
+crossbeam-channel = "0.5"
+
+# Native file dialogs
+rfd = "0.17"
+
+# Serialization / persistence
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+dirs = "6"
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

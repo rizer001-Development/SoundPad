@@ -1,43 +1,21 @@
-.gradle
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
-.kotlin
+# Rust / Cargo
+/target
+Cargo.lock.bak
 
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
+# App runtime data (portable data dir created next to the exe)
+/data/
+/sounds/
 
-### Eclipse ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-
-### VS Code ###
+# IDE
+.idea/
 .vscode/
+*.iml
 
-### Mac OS ###
-.DS_Store.idea/
+# OS
+.DS_Store
+Thumbs.db
+
+# Old JVM artifacts (kept out of history from now on)
+.gradle/
+build/
+.kotlin/

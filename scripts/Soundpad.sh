@@ -1,12 +1,10 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
-# Use bundled JRE if present, otherwise system Java
-if [ -f "runtime/bin/java" ]; then
-    JAVA="runtime/bin/java"
-else
-    JAVA="java"
+if [ -x "target/release/soundpad" ]; then
+    exec "./target/release/soundpad"
 fi
 
-echo "Starting Soundpad..."
-"$JAVA" -Dfile.encoding=UTF-8 -jar Soundpad.jar
+echo "Release binary not found. Building..."
+cargo build --release || exit 1
+exec "./target/release/soundpad"
