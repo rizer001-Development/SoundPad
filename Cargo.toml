@@ -1,6 +1,6 @@
 [package]
 name = "soundpad"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "Free, open-source soundpad for gamers and streamers"
 license = "AGPL-3.0"
