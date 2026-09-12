@@ -23,7 +23,7 @@ Soundpad is a lightweight, cross-platform soundboard application designed for ea
 - **Looping** — Toggle per-sound loop playback
 - **Dark/Light theme** — Choose your preferred look
 - **Search** — Instantly find sounds by name
-- **Drag & drop** — Add sounds by dropping files into the app
+- **Drag & drop** — The whole window is a drop target for audio files: drag them onto any part of the app (including the title bar / empty space) and a pulsing "⬇ Drop to add sounds" overlay shows where to drop them
 - **Lightweight** — Native binary, no JVM, fast startup, low memory
 
 ## Getting Started
