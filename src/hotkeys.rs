@@ -1,5 +1,5 @@
-//! Global hotkeys — Rust port of `hotkey/HotkeyManager.kt` using the
-//! `global-hotkey` crate. Hotkeys fire even when the app is unfocused.
+//! Global hotkeys — Using the `global-hotkey` crate. 
+//! Hotkeys fire even when the app is unfocused.
 
 use anyhow::Context as _;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};

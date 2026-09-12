@@ -1,4 +1,4 @@
-//! Core data models — Rust port of `model/Models.kt`.
+//! Core data models
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

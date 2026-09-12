@@ -1,4 +1,4 @@
-//! Audio engine — Rust port of `audio/AudioPlayer.kt` built on rodio/symphonia.
+//! Audio engine — built on rodio/symphonia.
 
 use crate::models::{PlaybackState, SoundFile};
 use cpal::traits::{DeviceTrait, HostTrait};
