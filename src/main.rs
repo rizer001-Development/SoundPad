@@ -119,6 +119,9 @@ struct SoundpadApp {
     edit_volume: f32,
     edit_hotkey: Option<String>,
     edit_hotkey_enabled: bool,
+    /// While the user is picking a new hotkey, this stays `Some` between frames so
+    /// the "Press any key" hint is shown until a chord is actually captured.
+    capture: Option<HotkeyCapture>,
     /// Scratch state for the new-category dialog.
     new_cat_name: String,
     new_cat_icon: String,
@@ -164,6 +167,7 @@ impl SoundpadApp {
             dialog: Dialog::None,
             edit_volume: 1.0,
             edit_hotkey: None,
+            capture: None,
             edit_hotkey_enabled: false,
             new_cat_name: String::new(),
             new_cat_icon: "folder".to_string(),
@@ -630,6 +634,7 @@ impl SoundpadApp {
                             self.edit_volume = sound.volume;
                             self.edit_hotkey = sound.hotkey.clone();
                             self.edit_hotkey_enabled = sound.hotkey.is_some();
+                            self.capture = None;
                         }
                     });
                 });
@@ -1151,7 +1156,6 @@ impl SoundpadApp {
         let mut save = false;
         let mut cancel = false;
         let mut delete = false;
-        let mut capture_hotkey = false;
 
         egui::Window::new(format!("Edit: {}", sound.name))
             .open(&mut open)
@@ -1183,39 +1187,54 @@ impl SoundpadApp {
                 ui.horizontal(|ui| {
                     ui.label("Hotkey");
                     ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
-                        ui.checkbox(&mut self.edit_hotkey_enabled, "");
+                        if ui.checkbox(&mut self.edit_hotkey_enabled, "").changed()
+                            && !self.edit_hotkey_enabled
+                        {
+                            // Disabling hotkeys aborts an in-progress capture.
+                            self.capture = None;
+                        }
                     });
-                });
-                if self.edit_hotkey_enabled {
-                    ui.horizontal(|ui| {
-                        let label = self
-                            .edit_hotkey
-                            .clone()
-                            .unwrap_or_else(|| "No keybind set".to_string());
-                        ui.label(RichText::new(label).color(ACCENT));
-                        if !capture_hotkey
-                            && ui
+                });                    if self.edit_hotkey_enabled {
+                        ui.horizontal(|ui| {
+                            let label = self
+                                .edit_hotkey
+                                .clone()
+                                .unwrap_or_else(|| "No keybind set".to_string());
+                            ui.label(RichText::new(label).color(ACCENT));
+                            if self.capture.is_some() {
+                                // While waiting for a key, the button becomes an abort.
+                                if ui.small_button("Cancel").clicked() {
+                                    self.capture = None;
+                                }
+                            } else if ui
                                 .small_button(if self.edit_hotkey.is_some() { "Rebind" } else { "Bind" })
                                 .clicked()
-                        {
-                            capture_hotkey = true;
-                        }
-                        if self.edit_hotkey.is_some() && ui.small_button("✕").clicked() {
-                            self.edit_hotkey = None;
-                        }
-                    });
-                    if capture_hotkey {
-                        ui.label(
-                            RichText::new("Press any key combination...")
-                                .color(ACCENT)
-                                .size(11.0),
-                        );
-                        if let Some(c) = capture_key(ui) {
-                            self.edit_hotkey = Some(c);
-                            capture_hotkey = false;
+                            {
+                                self.capture = Some(HotkeyCapture);
+                            }
+                            if self.edit_hotkey.is_some() && ui.small_button("✕").clicked() {
+                                self.edit_hotkey = None;
+                                // If the user clears the keybind while capture is active,
+                                // also stop capturing so the hint goes away.
+                                if self.capture.is_some() {
+                                    self.capture = None;
+                                }
+                            }
+                        });
+                        if let Some(_cap) = &self.capture {
+                            ui.label(
+                                RichText::new("Press any key combination... (Esc to cancel)")
+                                    .color(ACCENT)
+                                    .size(11.0),
+                            );
+                            if let Some(c) = capture_key(ui) {
+                                self.edit_hotkey = Some(c);
+                                self.capture = None;
+                            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                self.capture = None;
+                            }
                         }
                     }
-                }
 
                 ui.separator();
 
@@ -1295,8 +1314,10 @@ impl SoundpadApp {
 }
 
 /// Capture a key chord from egui input, e.g. "Ctrl+Shift+1".
+/// Must be called every frame while we are waiting for the user to press a key;
+/// it returns `Some(chord)` the frame the key is pressed, and `None` otherwise.
 fn capture_key(ui: &Ui) -> Option<String> {
-    ui.ctx().input(|i| {
+    ui.input(|i| {
         for ev in &i.events {
             if let egui::Event::Key { key, pressed: true, modifiers, repeat: false, .. } = ev {
                 let base = match key {
@@ -1374,6 +1395,10 @@ fn capture_key(ui: &Ui) -> Option<String> {
         None
     })
 }
+
+/// Marker state while the user is picking a new hotkey: keeps the
+/// "Press any key" hint visible until a chord is actually captured.
+struct HotkeyCapture;
 
 // ── Small helpers ───────────────────────────────────────────────────────────
 
