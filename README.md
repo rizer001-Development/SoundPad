@@ -1,12 +1,10 @@
 # Soundpad
 
-**Free, open-source soundpad for gamers and streamers — now in Rust.**
+**Free, open-source soundpad for gamers and streamers**
 
 ![Development status](https://img.shields.io/badge/status-Stable-green)
 
 Soundpad is a lightweight, cross-platform soundboard application designed for ease of use. Play sounds instantly with hotkeys, organize your sounds into categories, and route audio to any application.
-
-This version is a **complete rewrite of the original Kotlin/Compose Desktop app in Rust** (egui + rodio), with no JVM required.
 
 ---
 
@@ -87,8 +85,8 @@ src/
 
 ## Tech stack
 
-| Kotlin (old) | Rust (this repo) |
-|---|---|
+| Rust (this repo) |
+|---|
 | Compose Desktop | egui / eframe |
 | javax.sound + FFmpeg | rodio + symphonia |
 | JNativeHook | global-hotkey |
