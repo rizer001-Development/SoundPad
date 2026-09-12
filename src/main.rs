@@ -1,5 +1,4 @@
-//! Soundpad — Rust rewrite of the Kotlin/Compose Desktop soundboard.
-//!
+//! Soundpad — Rust Desktop soundboard.
 //! Entry point and the full egui application: sidebar with categories,
 //! sound grid, search, settings/edit dialogs, status bar and global hotkeys.
 
@@ -10,10 +9,7 @@ mod store;
 
 use audio::AudioPlayer;
 use eframe::egui;
-use egui::{
-    Align2, Color32, Context, CornerRadius, CursorIcon, FontId, Frame, LayerId, Layout, Margin,
-    Order, RichText, Sense, Shadow, Stroke, StrokeKind, Ui, Vec2, pos2,
-};
+use egui::{Align2, Color32, Context, CornerRadius, CursorIcon, FontId, Frame, Layout, Margin, RichText, Sense, Shadow, Stroke, StrokeKind, Ui, Vec2, pos2};
 use hotkeys::HotkeyManager;
 use models::{SoundCategory, SoundFile};
 use std::path::PathBuf;
@@ -270,25 +266,35 @@ impl eframe::App for SoundpadApp {
         // Loop restarts.
         self.player.tick();
 
-        // Drag & drop: add dropped audio files to the current category.
-        let dropped: Vec<std::path::PathBuf> = ctx
-            .input(|i| i.raw.dropped_files.clone())
-            .into_iter()
-            .map(|f| f.path().to_path_buf())
-            .collect();
-        if !dropped.is_empty() {
-            self.add_files(dropped);
+        let th = theme(self.store.settings.dark_theme);
+
+        // App-level drag-and-drop: the whole window is a drop target for audio files.
+        // The frame is painted as a drop zone so hovering files over the title bar / empty
+        // area highlights the app and shows the "drop" overlay inside the real target rect.
+        let (_inner_resp, dropped): (_, Option<std::sync::Arc<egui::HoveredFile>>) = ui.dnd_drop_zone(eframe::egui::Frame::new(), |ui| {
+            self.draw_top_bar(ui, &th);
+            self.draw_sidebar(ui, &th);
+            self.draw_status_bar(ui, &th);
+            self.draw_grid(ui, &th);
+            self.draw_dialogs(ui.ctx(), &th);
+        });
+
+        // When dragging files and the pointer is outside any egui widget, paint the
+        // pulsing overlay across the whole viewport so the app clearly signals
+        // "drop here".
+        let dragging = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if dragging && !_inner_resp.response.contains_pointer() {
+            draw_drop_overlay(&ctx);
         }
 
-        let th = theme(self.store.settings.dark_theme);
-        self.draw_top_bar(ui, &th);
-        self.draw_sidebar(ui, &th);
-        self.draw_status_bar(ui, &th);
-        self.draw_grid(ui, &th);
-        self.draw_dialogs(&ctx, &th);
-        draw_drop_overlay(&ctx);
+        if let Some(file) = dropped {
+            // `dnd_drop_zone` gives us the released file directly; if it came with a path,
+            // add it. Otherwise (e.g. a file dropped from a non-path source) we ignore it.
+            if let Some(path) = &file.path {
+                self.add_files(vec![path.clone()]);
+            }
+        }
 
-        // ~60 fps so hover/press/equalizer animations stay fluid.
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
 
@@ -1490,10 +1496,11 @@ fn draw_drop_overlay(ctx: &Context) {
     let dragging = ctx.input(|i| !i.raw.hovered_files.is_empty());
     if !dragging {
         return;
-    }
-    let screen: egui::Rect = ctx.input(|i| i.viewport_rect());
+    }        // Paint over the whole viewport so the drop highlight is visible even when
+        // hovering over the title bar and other non-egui chrome.
+        let screen: egui::Rect = ctx.input(|i| i.viewport_rect());
     {
-        let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, "drop_overlay".into()));
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, "drop_overlay".into()));
         let t = ctx.input(|i| i.time) as f32;
         let pulse = 0.5 + 0.5 * (t * 3.0).sin();
         painter.rect_filled(
