@@ -15,7 +15,7 @@ Soundpad is a lightweight, cross-platform soundboard application designed for ea
 ## Features
 
 - **Multi-format support** — MP3, WAV, OGG, FLAC, M4A, AAC (via symphonia)
-- **Global hotkeys** — Play sounds even when the app is minimized
+- **Global hotkeys** — Play sounds even when the app is minimized. Bound keys are *passive*: they are observed, not consumed, so a game still receives the key (bind W and you walk forward *and* play the sound)
 - **Categories** — Organize sounds into groups (Memes, Alerts, Music, etc.)
 - **Presets** — Save and load sound collections as JSON files
 - **Master & per-sound volume** — Control overall and individual output volume
@@ -80,7 +80,7 @@ src/
 ├── models.rs   — data types (SoundFile, Category, Preset, Settings)
 ├── store.rs    — JSON persistence
 ├── audio.rs    — multi-voice playback engine (rodio + cpal)
-└── hotkeys.rs  — global hotkeys (global-hotkey crate)
+└── hotkeys.rs  — global hotkeys (passive keyboard polling via device_query / GetAsyncKeyState)
 ```
 
 ## Tech stack
@@ -89,7 +89,7 @@ src/
 |---|
 | Compose Desktop | egui / eframe |
 | javax.sound + FFmpeg | rodio + symphonia |
-| JNativeHook | global-hotkey |
+| JNativeHook | device_query (passive key polling) |
 | kotlinx.serialization | serde_json |
 | SQLite (DatabaseManager) | JSON files (portable, no native deps) |
 
